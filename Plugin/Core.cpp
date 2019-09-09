@@ -67,6 +67,8 @@ BOOL optionOverwriteComments = FALSE;
 BOOL optionAudioOnDone       = TRUE;
 BOOL optionDumpIdentical     = FALSE;
 UINT optionIterLevels		 = 10;
+BOOL optionClean			 = FALSE;
+BOOL optionFullClear		 = FALSE;
 
 // List box defs
 static const char LBTITLE[] = {"[Class Informer]"};
@@ -417,7 +419,7 @@ void CORE_Process(int arg)
 	        }
 
 	        // Do UI
-            if (DoMainDialog(optionPlaceStructs, optionProcessStatic, optionOverwriteComments, optionAudioOnDone))
+            if (DoMainDialog(optionPlaceStructs, optionProcessStatic, optionOverwriteComments, optionAudioOnDone, optionClean, optionFullClear))
             {
                 msg("- Canceled -\n\n");
                 return;
@@ -2382,11 +2384,12 @@ void dumpClassMembers(FILE* f, RTTI::classInfo aCI, vftable::VFMemberList aML, b
 
 char THEprefix[MAXSTR] = "";
 static char lastError[MAXSTR] = "";
+static int funcIndex = 0;
 
 bool LookupFuncToName(func_t *funcTo, size_t index, size_t level, char * funcFromName, FILE* f)
 {
 	bool result = TRUE;
-	char szClassExport[MAXSTR] = "";
+	//char szClassExport[MAXSTR] = "";
 	xrefblk_t xb;
 	if (funcTo && (optionIterLevels > level))
 	{
@@ -2397,11 +2400,11 @@ bool LookupFuncToName(func_t *funcTo, size_t index, size_t level, char * funcFro
 			char funcToName[MAXSTR] = "";
 			{
 				qstring fN;
-				if (get_long_name(&fN, funcTo->startEA))
+				if (get_visible_name(&fN, funcTo->startEA))
 					RTTI::ReplaceForCTypeName(funcToName, fN.c_str());
 			}
 			UINT callIndex = 0;
-			::qsnprintf(szClassExport, MAXSTR - 1, "//\t%sxref to %s " EAFORMAT " at level %d for index %d", THEprefix, funcToName, funcTo->startEA, level, index);
+			//::qsnprintf(szClassExport, MAXSTR - 1, "//\t%sxref to %s " EAFORMAT " at level %d for index %d", THEprefix, funcToName, funcTo->startEA, level, index);
 			//qfprintf(f, "%s\n", szClassExport);
 			for (bool ok = xb.first_to(funcTo->startEA, XREF_ALL); ok; ok = xb.next_to())
 			{
@@ -2413,22 +2416,22 @@ bool LookupFuncToName(func_t *funcTo, size_t index, size_t level, char * funcFro
 				{
 					flags_t funcFromFlags = getFlags(funcFrom->startEA);
 					if (!has_name(funcFromFlags) || has_dummy_name(funcFromFlags))
-						if (!LookupFuncToName(funcFrom, callIndex, ++level, funcName, f))
+						if (!LookupFuncToName(funcFrom, ++funcIndex, ++level, funcName, f))
 							break;
 					if (has_name(funcFromFlags) && !has_dummy_name(funcFromFlags))
 					{
 						qstring fN;
-						if (get_long_name(&fN, funcFrom->startEA))
+						if (get_visible_name(&fN, funcFrom->startEA))
 							RTTI::ReplaceForCTypeName(funcName, fN.c_str());
 						else
 							strcpy_s(funcName, "NONAME__");
-						::qsnprintf(szClassExport, MAXSTR - 1, "//\t%sxref to %s " EAFORMAT " : From:" EAFORMAT " Func:" EAFORMAT " '%s'",
-							THEprefix, funcToName, funcTo->startEA, xb.from, funcFrom ? funcFrom->startEA : BADADDR, funcName);
+						//::qsnprintf(szClassExport, MAXSTR - 1, "//\t%sxref to %s " EAFORMAT " : From:" EAFORMAT " Func:" EAFORMAT " '%s'",
+						//	THEprefix, funcToName, funcTo->startEA, xb.from, funcFrom ? funcFrom->startEA : BADADDR, funcName);
 						//qfprintf(f, "%s\n", szClassExport);
 						//msgR("%s\n", szClassExport);
 						char newFuncName[MAXSTR] = "";
 						::qsnprintf(funcFromName, MAXSTR - 1, "%s%s_from%0.4d", strstr(funcName, "__ICI__") ? "" : "__ICI__", funcName, index);
-						::qsnprintf(newFuncName, MAXSTR - 1, "//\t\t%srenamed to '%s'", THEprefix, funcFromName);
+						//::qsnprintf(newFuncName, MAXSTR - 1, "//\t\t%srenamed to '%s'", THEprefix, funcFromName);
 						//qfprintf(f, "%s\n", newFuncName);
 						if (!(0 == stricmp(lastError, funcFromName)))
 							if (!set_name(funcTo->startEA, funcFromName))
@@ -2444,7 +2447,7 @@ bool LookupFuncToName(func_t *funcTo, size_t index, size_t level, char * funcFro
 		else
 		{
 			qstring fN;
-			if (get_long_name(&fN, funcTo->startEA))
+			if (get_visible_name(&fN, funcTo->startEA))
 				RTTI::ReplaceForCTypeName(funcFromName, fN.c_str());
 			//char newFuncName[MAXSTR] = "";
 			//::qsnprintf(newFuncName, MAXSTR - 1, "//\t\t%sfound named as '%s'", THEprefix, funcFromName);
@@ -2466,7 +2469,7 @@ bool LookupFuncFromName(func_t *funcFrom, size_t index, size_t level, char * fun
 	char funcFromName[MAXSTR] = "";
 	{
 		qstring fN;
-		if (get_long_name(&fN, funcFrom->startEA))
+		if (get_visible_name(&fN, funcFrom->startEA))
 			RTTI::ReplaceForCTypeName(funcFromName, fN.c_str());
 		else
 			return FALSE;
@@ -2475,6 +2478,7 @@ bool LookupFuncFromName(func_t *funcFrom, size_t index, size_t level, char * fun
 	if (optionIterLevels > level)
 		for (ea_t eaCurr = funcFrom->startEA; eaCurr < funcFrom->endEA; eaCurr = nextaddr(eaCurr))
 		{
+			callIndex++;
 			//::qsnprintf(szClassExport, MAXSTR - 1, "//\t%scref from '%s' " EAFORMAT " at level %d for index %d", THEprefix, funcFromName, eaCurr, level, index);
 			//qfprintf(f, "%s\n", szClassExport);
 			//strcat_s(THEprefix, "  ");
@@ -2483,7 +2487,7 @@ bool LookupFuncFromName(func_t *funcFrom, size_t index, size_t level, char * fun
 				char funcName[MAXSTR];
 				{
 					qstring fN;
-					if (get_long_name(&fN, xb.to))
+					if (get_visible_name(&fN, xb.to))
 						RTTI::ReplaceForCTypeName(funcName, fN.c_str());
 					else
 						strcpy_s(funcName, "NONAME__");
@@ -2494,7 +2498,6 @@ bool LookupFuncFromName(func_t *funcFrom, size_t index, size_t level, char * fun
 				func_t* funcTo = get_func(xb.to);
 				if (funcTo && (funcTo->startEA != funcFrom->startEA))
 				{
-					callIndex++;
 					//::qsnprintf(szClassExport, MAXSTR - 1, "//\t%scref from '%s' " EAFORMAT " : To:" EAFORMAT " Func:" EAFORMAT,
 					//	THEprefix, funcFromName, eaCurr, xb.to, funcTo ? funcTo->startEA : BADADDR);
 					//qfprintf(f, "%s\n", szClassExport);
@@ -2503,7 +2506,7 @@ bool LookupFuncFromName(func_t *funcFrom, size_t index, size_t level, char * fun
 					{
 						{
 							qstring fN;
-							if (get_long_name(&fN, funcTo->startEA))
+							if (get_visible_name(&fN, funcTo->startEA))
 								RTTI::ReplaceForCTypeName(funcName, fN.c_str());
 							else
 								strcpy_s(funcName, "NONAME__");
@@ -2511,8 +2514,8 @@ bool LookupFuncFromName(func_t *funcFrom, size_t index, size_t level, char * fun
 						char newFuncName[MAXSTR] = "";
 						::qsnprintf(funcToName, MAXSTR - 1, "%s%s_to%0.4d", strstr(funcFromName, "__ICI__") ? "" : "__ICI__", 
 							strlen(funcFromName) ? funcFromName : "NONAME__", callIndex);
-						::qsnprintf(szClassExport, MAXSTR - 1, "//\t%scref from '%s' " EAFORMAT " : To:" EAFORMAT " Func:" EAFORMAT " '%s' changed to '%s'",
-							THEprefix, funcFromName, eaCurr, xb.to, funcTo ? funcTo->startEA : BADADDR, funcName, funcToName);
+						//::qsnprintf(szClassExport, MAXSTR - 1, "//\t%scref from '%s' " EAFORMAT " : To:" EAFORMAT " Func:" EAFORMAT " '%s' changed to '%s'",
+						//	THEprefix, funcFromName, eaCurr, xb.to, funcTo ? funcTo->startEA : BADADDR, funcName, funcToName);
 						//qfprintf(f, "%s\n", szClassExport);
 						//msgR("%s\n", szClassExport);
 						//qfprintf(f, "%s\n", newFuncName);
@@ -2800,30 +2803,25 @@ static BOOL dumpVftables()
 		qfprintf(fClassIdc, "			auto jea = getRelJmpTarget(xea);\n");
 		qfprintf(fClassIdc, "			if (jea == BADADDR)\n");
 		qfprintf(fClassIdc, "			{\n");
+		qfprintf(fClassIdc, "				if (funcName != \"\")\n");
+		qfprintf(fClassIdc, "					MakeNameEx(xea, funcName, SN_NOCHECK + SN_PUBLIC + SN_NOWARN);\n");
+		qfprintf(fClassIdc, "				else\n");
 		qfprintf(fClassIdc, "				if (funcComment != \"\")\n");
 		qfprintf(fClassIdc, "				{\n");
 		qfprintf(fClassIdc, "					MakeComm(ea, funcComment);\n");
-		qfprintf(fClassIdc, "					if (funcName != \"\")\n");
-		qfprintf(fClassIdc, "						MakeComm(xea, funcComment);\n");
 		qfprintf(fClassIdc, "				}\n");
-		qfprintf(fClassIdc, "				if (funcName != \"\")\n");
-		qfprintf(fClassIdc, "					MakeNameEx(xea, funcName, SN_NOCHECK + SN_PUBLIC + SN_NOWARN);\n");
 		qfprintf(fClassIdc, "			}\n");
 		qfprintf(fClassIdc, "			else\n");
 		qfprintf(fClassIdc, "			{\n");
-		qfprintf(fClassIdc, "				if (funcComment != \"\")\n");
-		qfprintf(fClassIdc, "				{\n");
-		qfprintf(fClassIdc, "					MakeComm(ea, funcComment);\n");
-		qfprintf(fClassIdc, "					if (funcName != \"\")\n");
-		qfprintf(fClassIdc, "					{\n");
-		qfprintf(fClassIdc, "						MakeComm(xea, funcComment);\n");
-		qfprintf(fClassIdc, "						MakeComm(jea, funcComment);\n");
-		qfprintf(fClassIdc, "					}\n");
-		qfprintf(fClassIdc, "				}\n");
 		qfprintf(fClassIdc, "				if (funcName != \"\")\n");
 		qfprintf(fClassIdc, "				{\n");
 		qfprintf(fClassIdc, "					MakeNameEx(xea, \"\", SN_NOCHECK + SN_PUBLIC + SN_NOWARN);\n");
 		qfprintf(fClassIdc, "					MakeNameEx(jea, funcName, SN_NOCHECK + SN_PUBLIC + SN_NOWARN);\n");
+		qfprintf(fClassIdc, "				}\n");
+		qfprintf(fClassIdc, "				else\n");
+		qfprintf(fClassIdc, "				if (funcComment != \"\")\n");
+		qfprintf(fClassIdc, "				{\n");
+		qfprintf(fClassIdc, "					MakeComm(ea, funcComment);\n");
 		qfprintf(fClassIdc, "				}\n");
 		qfprintf(fClassIdc, "			}\n");
 		qfprintf(fClassIdc, "			ea = ea + pointerSize;\n");
@@ -2975,43 +2973,55 @@ static BOOL dumpVftables()
 						j += (ci->m_numBaseClasses - 1);
 					parentCount++;
 				}
-				qfprintf(fClassIncHpp, "%s\n", "{");
+				qfprintf(fClassIncHpp, "{ //\tvft=" EAFORMAT "\n", (UINT)-1 != aCI.m_vft ? aCI.m_vft : 0);
 				dumpClassMembers(fClassIncHpp, aCI, aML, false, true);
 				qfprintf(fClassIncHpp, "};\t//\t%04X\n\n", aCI.m_size);
 
-				UINT nameCount = 0;
-				for (UINT j = 0; j < aML.size(); j++)
+				if ((UINT)-1 != aCI.m_vft)
 				{
-					vftable::EntryInfo e = aML[j];
-					if (!e.isDefault && !e.isIdentical && e.isMember)
-						nameCount++;
-				}
-				if (nameCount)
-				{
-					// Start the class in IDC script
-					qfprintf(fClassIdc, "				vtblName = \"%s\"; // %s %s\n", get_true_name(aCI.m_vft).c_str(), aCI.m_colName, aCI.m_className);
-					qfprintf(fClassIdc, "				ea = LocByName(vtblName);\n");
-					qfprintf(fClassIdc, "				if (ea == BADADDR || vtblName == \"\")\n");
-					qfprintf(fClassIdc, "				{\n");
-					qfprintf(fClassIdc, "					Message(\"No label found for '%%s'\\n\", vtblName);\n");
-					qfprintf(fClassIdc, "				}\n");
-					qfprintf(fClassIdc, "				else\n");
-					qfprintf(fClassIdc, "				{\n");
-					qfprintf(fClassIdc, "					Jump(ea);\n");
-					qfprintf(fClassIdc, "					Message(\"Working on class %%s having %%d virtual members\\n\", vtblName, %d);\n", nameCount);
+					UINT nameCount = 0;
+					for (UINT j = 0; j < aML.size(); j++)
+					{
+						vftable::EntryInfo e = aML[j];
+						if (!e.IsDefault() && !e.IsIdentical() && !e.IsInherited())
+							nameCount++;
+					}
+					if (nameCount)
+					{
+						// Start the class in IDC script
+						qfprintf(fClassIdc, "				vtblName = \"%s\"; // '%s' '%s'\n", get_true_name(aCI.m_vft).c_str(), aCI.m_colName, aCI.m_className);
+						qfprintf(fClassIdc, "				if (vtblName != \"\")\n");
+						qfprintf(fClassIdc, "				{\n");
+						qfprintf(fClassIdc, "					ea = LocByName(vtblName);\n");
+						qfprintf(fClassIdc, "					if (ea == BADADDR)\n");
+						qfprintf(fClassIdc, "					{\n");
+						qfprintf(fClassIdc, "						Message(\"No label found for '%%s'\\n\", vtblName);\n");
+						qfprintf(fClassIdc, "					}\n");
+						qfprintf(fClassIdc, "					else\n");
+						qfprintf(fClassIdc, "					{\n");
+						qfprintf(fClassIdc, "						Jump(ea);\n");
+						qfprintf(fClassIdc, "						Message(\"Working on class %%s having %%d virtual members from a total of %%d\\n\", vtblName, %d, %d);\n", nameCount, aML.size());
 
-					if (strlen(aCI.m_colName))
-						for (UINT j = 0; j < aML.size(); j++)
-						{
-							vftable::EntryInfo e = aML[j];
-							if (!e.IsDefault() && !e.IsIdentical() && e.IsMember())
-								qfprintf(fClassIdc, "					ea = DoFunc(ea, \"%s\", \"%s\");\n", e.isOutOfHierarchy ? "" : e.fullName.c_str(), e.comment.c_str());
-							else
-								qfprintf(fClassIdc, "					ea = ea + pointerSize;\n");
-						}
-					// End the class in IDC script
-					qfprintf(fClassIdc, "				}\n");
-					qfprintf(fClassIdc, "\n");
+						UINT skipped = 0;
+						if (strlen(aCI.m_colName))
+							for (UINT j = 0; j < aML.size(); j++)
+							{
+								vftable::EntryInfo e = aML[j];
+								if (!e.IsDefault() && !e.IsIdentical() && !e.IsInherited())
+								{
+									if (skipped)
+										qfprintf(fClassIdc, "						ea = ea + pointerSize*%d;\n", skipped);
+									qfprintf(fClassIdc, "						ea = DoFunc(ea, \"%s\", \"%s\");\n", e.isOutOfHierarchy ? "" : e.fullName.c_str(), e.comment.c_str());
+									skipped = 0;
+								}
+								else
+									skipped++;
+							}
+						// End the class in IDC script
+						qfprintf(fClassIdc, "					}\n");
+						qfprintf(fClassIdc, "				}\n");
+						qfprintf(fClassIdc, "\n");
+					}
 				}
 			}
 		}
@@ -3089,7 +3099,7 @@ static BOOL dumpVftables()
 				{
 					char plainName[MAXSTR];
 					getPlainTypeName(RTTI::classList[i].m_bcdlist[k].m_name, plainName);
-					qfprintf(fClassHierarchy, "%d;%d;\"%s\";\"%s\";" EAFORMAT "\n", i, j, plainName, RTTI::classList[i].m_bcdlist[k].m_name, RTTI::classList[i].m_bcdlist[k].m_attribute);
+					qfprintf(fClassHierarchy, "%d;%d;\"%s\";\"%s\";%08X\n", i, j, plainName, RTTI::classList[i].m_bcdlist[k].m_name, (UINT32)RTTI::classList[i].m_bcdlist[k].m_attribute);
 				}
 			}
 
@@ -3151,7 +3161,7 @@ static BOOL dumpFuncs()
 			char funcFromName[MAXSTR] = "";
 			func_t* funcTo = getn_func(index);
 			if (funcTo)
-				/*if (*/LookupFuncToName(funcTo, index, 0, funcFromName, fClassIncTemp)/*)
+				/*if (*/LookupFuncToName(funcTo, ++funcIndex, 0, funcFromName, fClassIncTemp)/*)
 					qfprintf(fClassIncTemp, "\n")*/;
 		}
 	}
@@ -3191,11 +3201,13 @@ static BOOL getRttiData()
         if(findVftables())
             return(TRUE);
 
-		if (OpenFiles())
+		if (!optionClean && !optionFullClear && OpenFiles())
 #ifndef __DEBUG
 			try
 #endif
 		{
+			msg("\nDumping vftables.\n");
+			refreshUI();
 			if (dumpVftables())
 				return(TRUE);
 
@@ -3204,6 +3216,7 @@ static BOOL getRttiData()
 			// Could use the unlocated ref lists typeDescList & colList around for possible separate listing, etc.
 			// They get cleaned up on return of this function anyhow.
 
+			// ==== Find and process vftables
 			if (dumpFuncs())
 				return(TRUE);
 
